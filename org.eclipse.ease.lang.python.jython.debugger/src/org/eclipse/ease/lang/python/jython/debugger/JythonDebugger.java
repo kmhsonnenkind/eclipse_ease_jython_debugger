@@ -11,8 +11,10 @@
  *******************************************************************************/
 package org.eclipse.ease.lang.python.jython.debugger;
 
+import java.io.File;
 import java.util.Map;
 
+import org.eclipse.debug.core.DebugEvent;
 import org.eclipse.ease.IExecutionListener;
 import org.eclipse.ease.IScriptEngine;
 import org.eclipse.ease.Script;
@@ -25,29 +27,58 @@ import org.eclipse.ease.debugging.events.EngineTerminatedEvent;
 import org.eclipse.ease.debugging.events.GetStackFramesRequest;
 import org.eclipse.ease.debugging.events.IDebugEvent;
 import org.eclipse.ease.debugging.events.ResumeRequest;
+import org.eclipse.ease.debugging.events.ScriptReadyEvent;
 import org.eclipse.ease.debugging.events.ScriptStartRequest;
 import org.eclipse.ease.debugging.events.TerminateRequest;
+import org.python.core.Py;
+import org.python.core.PyObject;
+import org.python.util.InteractiveInterpreter;
 
 public class JythonDebugger implements IEventProcessor, IExecutionListener {
+	private InteractiveInterpreter mInterpreter;
+	private PyObject mPyDebugger;
+	private String mPyDir;
+	
+	/**
+	 * Declarations for variables and function names in Jython:
+	 */
+	public static final String PyDebuggerName = "eclipse_jython_debugger";
+	private static final String PySetBreakpointCmd = "set_break";
+	// private static final String PyRemoveBreakpointCmd = "clear_break";
+	// private static final String PyUpdateBreakpointCmd = "update_break";
+	
+	private static final String PyStepoverCmd = "step_stepover";
+	private static final String PyStepintoCmd = "step_stepinto";
+	private static final String PyStepoutCmd = "step_stepout";
+	private static final String PyResumeCmd = "step_continue";
+	
 	private JythonDebuggerEngine mEngine;
 	private EventDispatchJob mDispatcher;
 
-	private boolean mShowDynamicCode;
-	private Script mLastScript;
-
-	public JythonDebugger(final JythonDebuggerEngine engine, final boolean showDynamicCode) {
+	public JythonDebugger(final JythonDebuggerEngine engine) {
 		mEngine = engine;
 		mEngine.addExecutionListener(this);
-	
-		mShowDynamicCode = showDynamicCode;
 	}
-		
+
+	public void setInterpreter(InteractiveInterpreter interpreter) {
+		mInterpreter = interpreter;
+	}
+	
+	public void setPyDir(String pyDir) {
+		mPyDir = pyDir;
+	}
+
+	private void setupJythonObjects() {
+		mInterpreter.execfile(new File(new File(mPyDir), "setup_debugger.py").getAbsolutePath());
+		mPyDebugger = mInterpreter.get(PyDebuggerName);
+		mPyDebugger.invoke("set_dispatcher", Py.java2py(mDispatcher));
+	}
+	
 	public void setDispatcher(final EventDispatchJob dispatcher) {
 		mDispatcher = dispatcher;
 	}
 
 	private void fireDispatchEvent(final IDebugEvent event) {
-		System.out.println("Jython Debugger firing event: " + event);
 		synchronized(mDispatcher) {
 			if(mDispatcher != null)
 				mDispatcher.addEvent(event);
@@ -58,6 +89,7 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 	public void notify(IScriptEngine engine, Script script, int status) {
 		switch(status) {
 		case ENGINE_START:
+			setupJythonObjects();
 			fireDispatchEvent(new EngineStartedEvent());
 			break;
 		case ENGINE_END:
@@ -71,18 +103,11 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 			break;
 		
 		case SCRIPT_START:
-			// fall through
 		case SCRIPT_INJECTION_START:
-			//if(mLastScript != null)
-			//	throw new RuntimeException("LastScript has to be null");
-
-			mLastScript = script;
 			break;
 
 		case SCRIPT_END:
-			// fall through
 		case SCRIPT_INJECTION_END:
-			// nothing to do
 			break;
 
 		default:
@@ -90,19 +115,15 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 			break;
 		}
 	}
-
+	
 	@Override
 	public void handleEvent(IDebugEvent event) {
-		// TODO: actually implement
-		System.out.println("Jython Debugger received event: " + event);
-		
 		if (event instanceof ResumeRequest) {
-			System.out.println("    Jython Debugger:  going to resume.");
+			handleResumeRequest((ResumeRequest)event);
 		} else if(event instanceof ScriptStartRequest) {
-			System.out.println("    Jython Debugger:  going to start script");
+			
 		} else if(event instanceof BreakpointRequest) {
-			final Script script = ((BreakpointRequest)event).getScript();
-			System.out.println("    Jython Debugger:  Setting breakpoint for script " + script.getFile().toString());
+			handleBreakpointRequest((BreakpointRequest)event);
 		} else if(event instanceof GetStackFramesRequest) {
 			System.out.println("    Jython Debugger:  Stack frames request");
 		} else if(event instanceof TerminateRequest) {
@@ -110,9 +131,62 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 		}
 	}
 	
+	/**
+	 * Handles ResumeRequest from DebugTarget.
+	 * 
+	 * Depending on type of ResumeRequest different method in Jython will be called.
+	 * Currently implemented cases are:
+	 * 	 STEP_INTO
+	 *   STEP_OVER
+	 *   STEP_RETURN
+	 *  
+	 * If other type given, then resume will be called.
+	 *  
+	 * Response events will be raised from Jython itself.
+	 *  
+	 * @param event ResumeRequest containing necessary information for action to be performed
+	 */
+	private void handleResumeRequest(ResumeRequest event) {
+		// Simply switch over the type and call according function
+		switch (event.getType()) {
+		case DebugEvent.STEP_INTO:
+			mPyDebugger.invoke(PyStepintoCmd);
+			break;
+		case DebugEvent.STEP_OVER:
+			mPyDebugger.invoke(PyStepoverCmd);
+			break;
+		case DebugEvent.STEP_RETURN:
+			mPyDebugger.invoke(PyStepoutCmd);
+			break;
+		default:
+			// TODO: think if it would be better to only handle resume request
+			mPyDebugger.invoke(PyResumeCmd);
+			break;
+		}
+	}
+	
+	/**
+	 * Handles BreakpointRequest by setting Breakpoint in Jython.
+	 * 
+	 * @param event Event containing all necessary information for the desired Breakpoint.
+	 */
+	private void handleBreakpointRequest(BreakpointRequest event) {
+		// Create parameters in correct format
+		PyObject[] args = new PyObject[1];
+		args[0] = Py.java2py(new BreakpointInfo(((BreakpointRequest)event).getBreakpoint()));
+		
+		mPyDebugger.invoke(PySetBreakpointCmd,args);
+	}
+	
+	public void scriptReady(Script script) {
+		
+		ScriptReadyEvent ev = new ScriptReadyEvent(script, Thread.currentThread(), true);
+		fireDispatchEvent(ev);
+	}
+	
 	public class JythonDebugFrame implements IScriptDebugFrame {
 		public JythonDebugFrame() {
-			System.out.println("Createing new JythonDebugFrame");
+			System.out.println("Creating new JythonDebugFrame");
 		}
 		
 		

@@ -29,6 +29,7 @@ import org.python.core.PyString;
  */
 public class JythonDebuggerEngine extends JythonScriptEngine implements
 		IDebugEngine {
+	private JythonDebugger mDebugger = null;
 	
 	// FIXME: remove this, should be handled by event
 	private JythonDebugTarget mDebugTarget;
@@ -39,6 +40,11 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 	public JythonDebuggerEngine() {
 		super();
 		mPyDir = getPyDir();
+		System.out.println(mPyDir);
+	}
+	
+	public void setDebugger(JythonDebugger debugger) {
+		mDebugger = debugger;
 	}
 	
 	/**
@@ -64,14 +70,14 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 			return false;
 
 		// Check if currently run in debug mode
-		if (mDebugRun) {
+		if (mDebugger != null) {
 			// add python directory to Jython search path
 			addPyDirToJythonPath();
 			
 			// set objects in JythonDebugTarget
 			// FIXME: use events to correctly setup interpreter in JythonDebugTarget
-			mDebugTarget.setInterpreter(mEngine);
-			mDebugTarget.setPyDir(mPyDir);
+			mDebugger.setInterpreter(mEngine);
+			mDebugger.setPyDir(mPyDir);
 		}
 		return true;
 	}
@@ -90,8 +96,9 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 			String absoluteFilename = new File(ResourcesPlugin.getWorkspace().getRoot().getLocation().toFile(), fileName).getAbsolutePath();
 			
 			// Patch Script to use debugger to start file
-			String patchedCommandString = String.format("%s.start('%s');eclipse_jython_debugger.join()", JythonDebugTarget.PyDebuggerName, absoluteFilename);
+			String patchedCommandString = String.format("%s.run('%s')", JythonDebugger.PyDebuggerName, absoluteFilename);
 			Script patchedScript = new Script(patchedCommandString);
+			mDebugger.scriptReady(script);
 			
 			return super.execute(patchedScript, reference, null, uiThread);
 		}
@@ -120,8 +127,8 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 		mDebugRun = true;
 		launch.addDebugTarget(mDebugTarget);
 
-
-		final JythonDebugger debugger = new JythonDebugger(this, showDynamicCode);
+		final JythonDebugger debugger = new JythonDebugger(this);
+		setDebugger(debugger);
 		
 		final EventDispatchJob dispatcher = new EventDispatchJob(mDebugTarget, debugger);
 		mDebugTarget.setDispatcher(dispatcher);

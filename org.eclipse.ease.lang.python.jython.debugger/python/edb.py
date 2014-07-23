@@ -1,21 +1,14 @@
 import bdb
 import threading
 import os
- 
-class BdbRunWrapper(bdb.Bdb):
-    '''
-    Simple wrapper class to avoid name conflicts with threading.Thread.run .
-     
-    "Renames" bdb.Bdb.run to _run_wrapper
-    '''
-    def __init__(self,*args, **kwargs):
-        bdb.Bdb.__init__(self, *args, **kwargs)
- 
-    def _run_wrapper(self, *args, **kwargs):
-        bdb.Bdb.run(self, *args, **kwargs)
- 
+    
+# Eclipse imports for communication with framework     
+from org.eclipse.ease.debugging.events import SuspendedEvent
+from org.eclipse.ease.debugging.events import ResumedEvent
+from org.eclipse.debug.core import DebugEvent
+from java.lang import Thread
          
-class Edb(BdbRunWrapper, threading.Thread):
+class Edb(bdb.Bdb):
     '''
     Eclipse Debugger class.
      
@@ -35,34 +28,63 @@ class Edb(BdbRunWrapper, threading.Thread):
     #:        use _step_lock threading.Lock object to assure thread safety.
     _step_func = None
     _step_param = None
-     
-    def __init__(self, skip=None):
+    
+    _suspend_on_startup = False
+
+    #: org.eclipse.ease.debugging.EventDispatchJob handling communication to DebugTarget
+    _dispatcher = None
+
+    def __init__(self, dispatcher=None, breakpoints=[]):
         '''
-        Constructor calls base classes' constructors and
+        Constructor calls base class's constructors and
         sets up necessary members.
         '''
-        BdbRunWrapper.__init__(self, skip)
-        threading.Thread.__init__(self)
-         
+        bdb.Bdb.__init__(self)
+        self._dispatcher = dispatcher
         self._continue_event = threading.Event()
          
         self._frame_lock = threading.Lock()
         self._step_lock = threading.Lock()
-         
-    def set_break(self,filename, lineno, temporary=0, cond=None, funcname=None, hitcount=0):
+
+    def set_dispatcher(self, dispatcher):
         '''
-        Sets a new breakpoint with the given parameters.
+        Setter method for dispatcher.
+        TODO: think if it would be better to handle this in the constructor...
+ 
+        :param org.eclipse.ease.debugging.EventDispatchJob dispatcher:
+            EventDispatchJob for communication with eclipse framework via DebugTarget.
+        '''
+        self._dispatcher = dispatcher
+
+    def set_suspend_on_startup(self, suspend):
+        '''
+        Setter method for suspend_on_startup flag.
+    
+        TODO: think if it would be better to handle this in the constructor...
+    
+        :param bool suspend:
+            Value for _suspend_on_startup to be set.
+        '''
+        self._suspend_on_startup = suspend
+
+    def set_break(self, breakpoint):
+        '''
+        Sets a new breakpoint with the given BreakpointInfo.
      
-        Overrides bdb.Bdb to add additional parameter hitcount.
+        Overrides bdb.Bdb to use EASE BreakpointInfo class.
          
-        :param filename: filename for breakpoint
-        :param lineno: linenumber for breakpoint
-        :param temporary: flag to signalize if breakpoint is temporary
-                          (delete after hit)
-        :param cond: string with additional condition for breakpoint
-        :param hitcount: hitcount after which the breakpoint is set active
+        :param org.eclipse.ease.lang.python.jython.debugger.BreakpointInfo breakpoint:
+            BreakpointInfo object containing all necessary information.
         '''
-        print "Setting breakpoint in Python. File {} @ line {}".format(filename, lineno)
+        # Parse BreakpointInfo to named variables for easier understanding
+        filename = breakpoint.getFilename()
+        lineno = breakpoint.getLinenumber()
+        temporary = breakpoint.getCondition()
+        cond = breakpoint.getCondition()
+        funcname = None
+        hitcount = breakpoint.getHitcount()
+        
+        # print "Setting breakpoint in Python. File {} @ line {}".format(filename, lineno)
         bp = self.get_break(filename, lineno)
         if not bp:
             bdb.Bdb.set_break(self, filename, lineno, temporary, cond, funcname)
@@ -70,17 +92,23 @@ class Edb(BdbRunWrapper, threading.Thread):
         if hitcount:
             self.get_break(filename, lineno).ignore = hitcount
  
-    def update_break(self, filename, lineno, temporary=0, cond=None, funcname=None, hitcount=0):
+    def update_break(self, breakpoint):
         '''
-        Simply deletes breakpoint for file/line and adds a new one with given parameters.
+        Deletes breakpoint at given location and creates new one with given parameters
+     
+        Overrides bdb.Bdb to use EASE BreakpointInfo class.
          
-        :param filename: filename for breakpoint
-        :param lineno: linenumber for breakpoint
-        :param temporary: flag to signalize if breakpoint is temporary
-                          (delete after hit)
-        :param cond: string with additional condition for breakpoint
-        :param hitcount: hitcount after which the breakpoint is set active
+        :param org.eclipse.ease.lang.python.jython.debugger.BreakpointInfo breakpoint:
+            BreakpointInfo object containing all necessary information.
         '''
+        # Parse BreakpointInfo to named variables for easier understanding
+        filename = breakpoint.getFilename()
+        lineno = breakpoint.getLinenumber()
+        temporary = breakpoint.getCondition()
+        cond = breakpoint.getCondition()
+        funcname = None
+        hitcount = breakpoint.getHitcount()
+        
         self.clear_break(filename, lineno)
         self.set_break(filename, lineno, temporary, cond, funcname, hitcount)
  
@@ -103,21 +131,39 @@ class Edb(BdbRunWrapper, threading.Thread):
          
         with self._frame_lock:
             self._current_frame = frame
-             
+
+        if self._suspend_on_startup and self._first:
+            self._first = False
+            self.set_continue()
+            return
+        
         # threading.Event is thread-safe
-        # TODO: actually break ;)
-        print "Breakpoint reached at {} line {}".format(filename, frame.f_lineno)
-        self.set_continue()
-        return 
-        # self._continue_event.wait()
-        # self._continue_event.clear()
-         
-        # Use double checked locking to assure thread safety
+        self._break()
+        self._continue()
+        
         if self._step_func:
             with self._step_lock:
                 if self._step_func:
                     self._step_func(*(self._step_param or []))
                 self._step_func = self._step_param = None
+
+    def _break(self):
+        # print "Handling breakpoint in file {} @line {}".format(self._current_frame.f_code.co_filename, self._current_frame.f_lineno)
+        
+        if self._dispatcher:
+            self._dispatcher.addEvent(SuspendedEvent(1, Thread.currentThread(), []))
+        self._continue_event.wait()
+        self._continue_event.clear()
+
+    def _continue(self):
+        if self._step_func:
+            with self._step_lock:
+                if self._step_func:
+                    self._step_func(*(self._step_param or []))
+                self._step_func = self._step_param = None
+        self._dispatcher.addEvent(ResumedEvent(Thread.currentThread(), self._resume_event_type))
+        self._resume_event_type = -1
+
              
     def _continue_wrapper(func):
         '''
@@ -143,8 +189,9 @@ class Edb(BdbRunWrapper, threading.Thread):
         Simply stores self.set_continue method to member.
         Thread safety assured by _continue_wrapper.
         '''
-        print "Continuing with something"
+        # print "Jython will now continue execution"
         self._step_func = self.set_continue
+        self._resume_event_type = 0x20
      
     @_continue_wrapper
     def step_stepover(self):
@@ -152,8 +199,10 @@ class Edb(BdbRunWrapper, threading.Thread):
         Simply stores self.set_step method to member.
         Thread safety assured by _continue_wrapper.
         '''
+        # print "Jython will step over current statement"
         self._step_func = self.set_until
         self._step_param = [self._current_frame]
+        self._resume_event_type = DebugEvent.STEP_OVER
  
     @_continue_wrapper
     def step_stepinto(self):
@@ -161,7 +210,9 @@ class Edb(BdbRunWrapper, threading.Thread):
         Simply stores self.set_next method to member.
         Thread safety assured by _continue_wrapper.
         '''
+        # print "Jython will step into current statement"
         self._step_func = self.set_step
+        self._resume_event_type = DebugEvent.STEP_INTO
  
     @_continue_wrapper
     def step_stepout(self):
@@ -169,8 +220,10 @@ class Edb(BdbRunWrapper, threading.Thread):
         Simply stores self.set_next method to member.
         Thread safety assured by _continue_wrapper.
         '''
+        # print "Jython will step out of current statement"
         self._step_func = self.set_return
         self._step_param = [self._current_frame]
+        self._resume_event_type = DebugEvent.STEP_RETURN
  
     @_continue_wrapper
     def step_quit(self):
@@ -236,37 +289,21 @@ class Edb(BdbRunWrapper, threading.Thread):
                     return True
         return False
              
-     
-    def run(self):
+    def run(self, file_to_run):
         '''
-        threading.Thread's run method will be started in new Thread.
+        Executes the file given using the bdb.Bdb.run method.
          
-        Executes the file given to self.start in this JythonInstance.
-         
-        :raises IOError: if file does not exist
+        :raises ValueError: if empty filename given.
+        :raises IOError: if file does not exist.
         '''
-        print "Run in Jython EDB called."
-        if not self._file_to_run:
+        if not file_to_run:
             raise ValueError("filename for run must not be empty")
-        if not os.path.exists(self._file_to_run):
+        if not os.path.exists(file_to_run):
             raise IOError("file {} does not exist".format(self._file_to_run))
-             
-        cmd = 'execfile({})'.format(repr(self._file_to_run))
-        self._run_wrapper(cmd)
-         
-        # Reset thread to be reusable
-        threading.Thread.__init__(self)
- 
-    def start(self, filename):
-        '''
-        Override of threading.Thread.start.
-         
-        Take filename as parameter that will be used for debugging.
-         
-        :param filename: filename of file to be debugged
-        '''
-        print "Start in Jython EDB called"
-        self._file_to_run = os.path.abspath(filename)
-        threading.Thread.start(self)
+
+        self._first = True
+        cmd = 'execfile({})'.format(repr(file_to_run))
+        bdb.Bdb.run(self, cmd)
+
  
 eclipse_jython_debugger = Edb()
