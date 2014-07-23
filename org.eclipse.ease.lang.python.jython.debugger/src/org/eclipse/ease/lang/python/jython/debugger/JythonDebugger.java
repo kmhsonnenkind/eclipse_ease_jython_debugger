@@ -172,8 +172,9 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 	 */
 	private void handleBreakpointRequest(BreakpointRequest event) {
 		// Create parameters in correct format
-		PyObject[] args = new PyObject[1];
+		PyObject[] args = new PyObject[2];
 		args[0] = Py.java2py(new BreakpointInfo(((BreakpointRequest)event).getBreakpoint()));
+		args[1] = Py.java2py(event.getScript());
 		
 		mPyDebugger.invoke(PySetBreakpointCmd,args);
 	}

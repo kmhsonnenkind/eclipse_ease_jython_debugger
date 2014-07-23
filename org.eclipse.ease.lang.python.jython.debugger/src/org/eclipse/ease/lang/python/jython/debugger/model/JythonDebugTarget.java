@@ -11,6 +11,7 @@
  *******************************************************************************/
 package org.eclipse.ease.lang.python.jython.debugger.model;
 
+import org.eclipse.core.resources.IMarkerDelta;
 import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.ILaunch;
@@ -58,5 +59,28 @@ public class JythonDebugTarget extends ScriptDebugTarget {
 	@Override
 	protected IBreakpoint[] getBreakpoints(final Script script) {
 		return DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(pyBreakpointType);
+	}
+	
+	@Override
+	public void breakpointAdded(final IBreakpoint breakpoint) {
+		System.out.println("I should now add a breakpoint");
+	}
+	
+
+	@Override
+	public void breakpointRemoved(final IBreakpoint breakpoint, final IMarkerDelta delta) {
+		System.out.println("I should now remove a breakpoint");
+
+	}
+
+	@Override
+	public void breakpointChanged(final IBreakpoint breakpoint, final IMarkerDelta delta) {
+		System.out.println("I should now update a breakpoint");
+	}
+	
+	@Override
+	public boolean supportsBreakpoint(final IBreakpoint breakpoint) {
+		// TODO Auto-generated method stub
+		return true;
 	}
 }

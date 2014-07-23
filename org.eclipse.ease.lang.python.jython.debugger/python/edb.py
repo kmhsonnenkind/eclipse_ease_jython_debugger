@@ -6,7 +6,9 @@ import os
 from org.eclipse.ease.debugging.events import SuspendedEvent
 from org.eclipse.ease.debugging.events import ResumedEvent
 from org.eclipse.debug.core import DebugEvent
+from org.eclipse.ease.lang.python.jython.debugger import JythonDebugFrame
 from java.lang import Thread
+from java.util import HashMap
          
 class Edb(bdb.Bdb):
     '''
@@ -17,7 +19,7 @@ class Edb(bdb.Bdb):
     Used to have safe cross-thread debugging functionality
     '''
     _file_to_run = None
- 
+    _breakpoint_to_script = {}
     #: member storing current frame object while breakpoint hit.
     #: :note: This member is accessed by several threads, always use
     #:        _frame_lock threading.Lock object to assure thread-safety.
@@ -67,7 +69,7 @@ class Edb(bdb.Bdb):
         '''
         self._suspend_on_startup = suspend
 
-    def set_break(self, breakpoint):
+    def set_break(self, breakpoint, script):
         '''
         Sets a new breakpoint with the given BreakpointInfo.
      
@@ -83,6 +85,8 @@ class Edb(bdb.Bdb):
         cond = breakpoint.getCondition()
         funcname = None
         hitcount = breakpoint.getHitcount()
+        
+        self._breakpoint_to_script.update({filename: {lineno: script}})
         
         # print "Setting breakpoint in Python. File {} @ line {}".format(filename, lineno)
         bp = self.get_break(filename, lineno)
@@ -132,7 +136,7 @@ class Edb(bdb.Bdb):
         with self._frame_lock:
             self._current_frame = frame
 
-        if self._suspend_on_startup and self._first:
+        if self._first:
             self._first = False
             self.set_continue()
             return
@@ -151,7 +155,16 @@ class Edb(bdb.Bdb):
         # print "Handling breakpoint in file {} @line {}".format(self._current_frame.f_code.co_filename, self._current_frame.f_lineno)
         
         if self._dispatcher:
-            self._dispatcher.addEvent(SuspendedEvent(1, Thread.currentThread(), []))
+            frames = []
+            
+            # TODO: think of way to handle script mapping
+            fn = self._current_frame.f_code.co_filename
+            lineno = self._current_frame.f_lineno
+            if self._breakpoint_to_script.get(fn, {}).get(lineno):
+                script = self._breakpoint_to_script.get(fn).get(lineno)
+                frames.append(JythonDebugFrame(script, fn, lineno, self.list_vars()))
+
+            self._dispatcher.addEvent(SuspendedEvent(1, Thread.currentThread(), frames))
         self._continue_event.wait()
         self._continue_event.clear()
 
@@ -264,6 +277,10 @@ class Edb(bdb.Bdb):
         if self._current_frame:
             with self._frame_lock:
                 if self._current_frame:
+                    as_java = HashMap()
+                    for key, val in self._current_frame.f_locals.items():
+                        as_java.put(key,val)
+                    return as_java
                     return self._current_frame.f_locals
              
     def set_var(self, var, val):
