@@ -1,15 +1,15 @@
 package org.eclipse.ease.lang.python.jython.debugger;
 
+import java.io.File;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.Map.Entry;
 
+import org.eclipse.core.internal.resources.Workspace;
+import org.eclipse.core.resources.IWorkspace;
+import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.Path;
 import org.eclipse.ease.Script;
 import org.eclipse.ease.debugging.IScriptDebugFrame;
-import org.python.core.PyInteger;
-import org.python.core.PyObject;
-import org.python.core.PyString;
 
 public class JythonDebugFrame implements IScriptDebugFrame {
 	private String mName;
@@ -17,24 +17,31 @@ public class JythonDebugFrame implements IScriptDebugFrame {
 	private Script mScript;
 	private Map<String, Object> mLocals = new HashMap<String, Object>();
 		
-	public JythonDebugFrame(Script script, PyString name, PyInteger lineNumber, Map<String, Object> locals) {
-		mScript = script;
-		mName = name.asString();
-		mLineNumber = lineNumber.asInt();
+	public JythonDebugFrame(String filename, int linenumber, Map<String, Object> locals) {
+		mLineNumber = linenumber;
 		mLocals = locals;
-//		Iterator<Entry<PyString, PyObject>> it = locals.entrySet().iterator();
-//		while(it.hasNext()) {
-//			Map.Entry<PyString, PyObject> pairs = (Map.Entry<PyString, PyObject>) it.next();
-//			mLocals.put(pairs.getKey().asString(), pairs.getValue());
-//			it.remove();
-//		}
+		String wsPath = "/" + ResourcesPlugin.getWorkspace().getRoot().getLocation().toFile().toURI().relativize(new File(filename).toURI()).getPath();
+		mScript = new Script(new JythonFile(wsPath));
+		mName = wsPath;
 	}
-
+	
+	/**
+	 * Overrides File class to have accessible constructor.
+	 * @author kloeschmartin
+	 */
+	@SuppressWarnings("restriction")
+	private class JythonFile extends org.eclipse.core.internal.resources.File {
+		public JythonFile(String fn) {
+			super(new Path(fn), (Workspace) ResourcesPlugin.getWorkspace());
+		}
+	}
+	
 	@Override
 	public int getLineNumber() {
 		return mLineNumber;
 	}
 
+	IWorkspace ws = ResourcesPlugin.getWorkspace();
 	@Override
 	public Script getScript() {
 		return mScript;
@@ -54,5 +61,4 @@ public class JythonDebugFrame implements IScriptDebugFrame {
 	public Map<String, Object> getVariables() {
 		return mLocals;
 	}
-
 }

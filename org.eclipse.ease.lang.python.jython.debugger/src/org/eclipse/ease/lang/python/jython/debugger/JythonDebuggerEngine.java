@@ -12,6 +12,8 @@
 package org.eclipse.ease.lang.python.jython.debugger;
 
 import java.io.File;
+
+import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.Platform;
 import org.eclipse.debug.core.ILaunch;
@@ -20,6 +22,7 @@ import org.eclipse.ease.Script;
 import org.eclipse.ease.debugging.EventDispatchJob;
 import org.eclipse.ease.lang.python.jython.JythonScriptEngine;
 import org.eclipse.ease.lang.python.jython.debugger.model.JythonDebugTarget;
+import org.python.core.Py;
 import org.python.core.PyList;
 import org.python.core.PyString;
 
@@ -30,9 +33,6 @@ import org.python.core.PyString;
 public class JythonDebuggerEngine extends JythonScriptEngine implements
 		IDebugEngine {
 	private JythonDebugger mDebugger = null;
-	
-	// FIXME: remove this, should be handled by event
-	private JythonDebugTarget mDebugTarget;
 	
 	private boolean mDebugRun;
 	private String mPyDir;
@@ -92,6 +92,22 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 		if (uiThread || !mDebugRun || fileName == null) {
 			return super.execute(script, reference, fileName, uiThread);
 		} else {
+			// FIXME: copied code from JythonScriptEngine necessary for imports.
+			Object file = script.getFile();
+			File f = null;
+			if (file instanceof IFile) {
+				f = ((IFile) file).getLocation().toFile();
+			} else if (file instanceof File) {
+				f = ((File) file);
+			}
+			
+			if (f != null) {
+				String absolutePath = f.getAbsolutePath();
+				setVariable("__file__", absolutePath);
+				String containerPart = f.getParent();
+				Py.getSystemState().path.insert(0, Py.newString(containerPart));
+			}
+			
 			// use absolute file location that Jython can handle breakpoints correctly
 			String absoluteFilename = new File(ResourcesPlugin.getWorkspace().getRoot().getLocation().toFile(), fileName).getAbsolutePath();
 			
@@ -100,7 +116,7 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 			Script patchedScript = new Script(patchedCommandString);
 			mDebugger.scriptReady(script);
 			
-			return super.execute(patchedScript, reference, null, uiThread);
+			return super.execute(patchedScript, reference, fileName, uiThread);
 		}
 	}
 
@@ -123,15 +139,15 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 	 */
 	@Override
 	public void setupDebugger(ILaunch launch, boolean suspendOnStartup, boolean suspendOnScriptLoad, boolean showDynamicCode) {
-		mDebugTarget = new JythonDebugTarget(launch, suspendOnStartup);
+		JythonDebugTarget target = new JythonDebugTarget(launch, suspendOnStartup);
 		mDebugRun = true;
-		launch.addDebugTarget(mDebugTarget);
+		launch.addDebugTarget(target);
 
-		final JythonDebugger debugger = new JythonDebugger(this);
+		final JythonDebugger debugger = new JythonDebugger(this, suspendOnStartup);
 		setDebugger(debugger);
 		
-		final EventDispatchJob dispatcher = new EventDispatchJob(mDebugTarget, debugger);
-		mDebugTarget.setDispatcher(dispatcher);
+		final EventDispatchJob dispatcher = new EventDispatchJob(target, debugger);
+		target.setDispatcher(dispatcher);
 		debugger.setDispatcher(dispatcher);
 		dispatcher.schedule();
 	}
