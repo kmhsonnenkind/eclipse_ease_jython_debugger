@@ -330,15 +330,28 @@ class Edb(bdb.Bdb):
         :raises ValueError: if empty filename given.
         :raises IOError: if file does not exist.
         '''
-        self.reset()
         if not file_to_run:
             raise ValueError("filename for run must not be empty")
         if not os.path.exists(file_to_run):
             raise IOError("file {} does not exist".format(file_to_run))
+        
+        # HACK: Problem with recompilation of modules. Could be overkill.
+        self.reload_modules()
+        
 
         self._first = True
         cmd = 'execfile({})'.format(repr(file_to_run))
         bdb.Bdb.run(self, cmd)
+        bdb.Bdb.__init__(self, None)
 
- 
+    def reload_modules(self):
+        '''
+        Jython / JythonScriptEngine currently has a problem with changed sources
+        so we reload all necessary modules here to have modified sources.
+        '''
+        import sys, types
+        for mod in globals().values():
+            if isinstance(mod, types.ModuleType) and mod not in [bdb, sys, types]:
+                mod = reload(mod)
+
 eclipse_jython_debugger = Edb()
