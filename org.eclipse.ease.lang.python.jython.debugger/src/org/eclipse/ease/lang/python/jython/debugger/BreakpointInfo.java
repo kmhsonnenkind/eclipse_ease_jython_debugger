@@ -4,11 +4,14 @@ import java.io.File;
 
 import org.eclipse.core.resources.ResourcesPlugin;
 import org.eclipse.core.runtime.CoreException;
+import org.eclipse.debug.core.DebugException;
 import org.eclipse.debug.core.model.IBreakpoint;
 import org.eclipse.debug.core.model.LineBreakpoint;
+import org.python.pydev.debug.model.PyBreakpoint;
 
 /**
  * Helper class to parse IBreakpoint and have easy access to information
+ * in Jython.
  * 
  * @author kloeschmartin
  */
@@ -25,29 +28,34 @@ public class BreakpointInfo {
 	/**
 	 * Parses breakpoint info from IBreakpoint to members
 	 * 
-	 * @param breakpoint
+	 * @param breakpoint: breakpoint to be parsed.
 	 */
 	public BreakpointInfo(final IBreakpoint breakpoint) {
-		mFilename = breakpoint.getMarker().getResource().getFullPath()
-				.toOSString();
-		mFilename = new File(ResourcesPlugin.getWorkspace().getRoot()
-				.getLocation().toFile(), mFilename).getAbsolutePath();
+		// Calculate absolute filename (necessary for Jython debugger)
+		mFilename = breakpoint.getMarker().getResource().getFullPath().toOSString();
+		mFilename = new File(ResourcesPlugin.getWorkspace().getRoot().getLocation().toFile(), mFilename).getAbsolutePath();
 
 		if (breakpoint instanceof LineBreakpoint) {
 			try {
 				mLinenumber = ((LineBreakpoint) breakpoint).getLineNumber();
 			} catch (CoreException e) {
-				System.err
-						.println("BreakpointInfor: did not get linenumber for breakpoint.");
+				System.err.println("BreakpointInfo: did not get linenumber for breakpoint.");
 				e.printStackTrace();
+			}
+		}
+		
+		// TODO: think about custom breakpoint
+		if (breakpoint instanceof PyBreakpoint) {
+			try {
+				mCondition = ((PyBreakpoint) breakpoint).getCondition();
+			} catch (DebugException e) {
 			}
 		}
 	}
 
 	// ************************************************************
-	// Getter methods
+	// Getter methods for necessary information
 	// ************************************************************
-
 	public String getFilename() {
 		return mFilename;
 	}

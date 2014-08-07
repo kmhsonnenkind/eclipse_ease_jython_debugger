@@ -1,3 +1,4 @@
+# Python std library imports
 import bdb
 import threading
 import os
@@ -7,6 +8,8 @@ from org.eclipse.ease.debugging.events import SuspendedEvent
 from org.eclipse.ease.debugging.events import ResumedEvent
 from org.eclipse.debug.core import DebugEvent
 from org.eclipse.ease.lang.python.jython.debugger import JythonDebugFrame
+
+# Java imports to easily cast objects
 from java.lang import Thread
 from java.util import HashMap
          
@@ -22,6 +25,7 @@ class Edb(bdb.Bdb):
     #: :note: This member is accessed by several threads, always use
     #:        _frame_lock threading.Lock object to assure thread-safety.
     _current_frame = None
+    _current_file = None
      
     #: member storing "step" function to be called after breakpoint.
     #: :note: Once again, this member is used by multiple threads.
@@ -29,24 +33,26 @@ class Edb(bdb.Bdb):
     _step_func = None
     _step_param = None
     
+    #: Flag to signalize if debugger should suspend on startup
     _suspend_on_startup = False
-    _current_file = None
-
 
     def __init__(self, breakpoints=[]):
         '''
-        Constructor calls base class's constructors and
+        Constructor calls base class's constructor and
         sets up necessary members.
         '''
         bdb.Bdb.__init__(self)
         self._continue_event = threading.Event()
          
-        self._frame_lock = threading.Lock()
-        self._step_lock = threading.Lock()
+        # RLocks can be acquired multiple times by same thread.
+        # Should actually not make a difference but better safe than sorry
+        self._frame_lock = threading.RLock()
+        self._step_lock = threading.RLock()
 
     def set_debugger(self,debugger):
         '''
         Setter method for self._debugger.
+        
         Since the actual object creation is handled by setup.py we need to set 
         the object here.
         
@@ -58,6 +64,7 @@ class Edb(bdb.Bdb):
     def set_suspend_on_startup(self, suspend):
         '''
         Setter method for suspend_on_startup flag.
+        
         Since the actual object creation is handled by setup.py we need to set 
         the object here.
     
@@ -79,13 +86,18 @@ class Edb(bdb.Bdb):
         # Parse BreakpointInfo to named variables for easier understanding
         filename = breakpoint.getFilename()
         lineno = breakpoint.getLinenumber()
-        temporary = breakpoint.getCondition()
+        temporary = False
         cond = breakpoint.getCondition()
         funcname = None
         hitcount = breakpoint.getHitcount()
         
+        # Just to be sure delete old breakpoint
         self.clear_break(filename, lineno)
+        
+        # Set breakpoint with parsed information
         bdb.Bdb.set_break(self, filename, lineno, temporary, cond, funcname)
+        
+        # bdb.Breakpoints do not have hitcount parameter in constructor so set it here
         if hitcount:
             self.get_break(filename, lineno).ignore = hitcount
  
@@ -105,12 +117,15 @@ class Edb(bdb.Bdb):
         
         Only checks if new file is being used and updates breakpoints accordingly.
         '''
-        # TODO: Check if locking would interfere with performance
         fn = frame.f_code.co_filename
+        
+        # Check if file has changed
         if fn != self._current_file:
+            # In case of file change wait for JythonDebugger to set new breakpoints.
             if self._current_file and os.path.exists(self._current_file):
                 self._debugger.checkBreakpoints(fn);
                 
+            # TODO: Check if locking would interfere with performance
             self._current_file = fn
         return bdb.Bdb.dispatch_call(self, frame, arg)
  
@@ -128,28 +143,36 @@ class Edb(bdb.Bdb):
         :param frame: bdb.Frame object storing information about current line.
         '''
         filename = frame.f_code.co_filename
+        
+        # Linenumber < 1 means this is the first call (<string> 0)
         if frame.f_lineno < 1:
             return
          
+        # Safe bdb.Frame object to member
+        # Lock since this can be accessed by several threads
         with self._frame_lock:
             self._current_frame = frame
 
-        if self._first:
+        # Simple sulution to handle suspend on startup
+        if self._first and self._suspend_on_startup:
             self._first = False
             self.set_continue()
             return
         
-        # threading.Event is thread-safe
+        # Call break function that notifies JythonDebugger and suspends execution
         self._break()
+        
+        # If we are here everything necessary was handled
         self._continue()
 
     def _break(self):
         '''
         Function called when Debugger stops (breakpoint or step command).
         
-        Calls JythonDebugger to signalize event to Eclipse and waits for user input.
+        Calls JythonDebugger to send event to Eclipse and waits for user input.
         '''
-        # Use suspend in JythonDebugger. Would also be possible to directly raise new SuspendedEvent
+        # Use suspend in JythonDebugger. 
+        # Would also be possible to directly raise new SuspendedEvent
         self._debugger.fireSuspendEvent(Thread.currentThread(), self._get_stack_trace())
         
         # Wait for continuation from Eclipse
@@ -168,9 +191,9 @@ class Edb(bdb.Bdb):
         for stack_entry in reversed(bdb_stack):
             frame, lineno = stack_entry
             filename = frame.f_code.co_filename
-
             
-            # If file does not exist we can assume that it is a builtin and can be skipped.            
+            # If file does not exist we can assume that it is a builtin and can be skipped.
+            # This also means we are already down the stack and can abort.            
             if not os.path.exists(filename):
                 break
             
@@ -192,8 +215,11 @@ class Edb(bdb.Bdb):
         if self._step_func:
             with self._step_lock:
                 if self._step_func:
+                    # Since in Python everything is an object, this works
                     self._step_func(*(self._step_param or []))
                 self._step_func = self._step_param = None
+                
+        # Reset resume event. Integers are thread-safe by default
         self._resume_event_type = -1
              
     def _continue_wrapper(func):
@@ -338,7 +364,6 @@ class Edb(bdb.Bdb):
         # HACK: Problem with recompilation of modules. Could be overkill.
         self.reload_modules()
         
-
         self._first = True
         cmd = 'execfile({})'.format(repr(file_to_run))
         bdb.Bdb.run(self, cmd)
@@ -347,10 +372,11 @@ class Edb(bdb.Bdb):
     def reload_modules(self):
         '''
         Jython / JythonScriptEngine currently has a problem with changed sources
-        so we reload all necessary modules here to have modified sources.
+        so we reload all imported modules here to have modified sources.
         '''
         import sys, types
         for mod in globals().values():
+            # Ignore packages imported here
             if isinstance(mod, types.ModuleType) and mod not in [bdb, sys, types]:
                 mod = reload(mod)
 

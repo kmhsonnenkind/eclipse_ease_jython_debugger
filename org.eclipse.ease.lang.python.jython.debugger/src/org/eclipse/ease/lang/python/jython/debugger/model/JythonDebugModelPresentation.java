@@ -27,6 +27,8 @@ import org.eclipse.ui.editors.text.EditorsUI;
 import org.eclipse.ui.part.FileEditorInput;
 
 public class JythonDebugModelPresentation implements IDebugModelPresentation {
+	public static String ID = "org.python.pydev.debug";//"org.eclipse.ease.lang.python.jython.debugger.model.JythonDebugModelPresentation";
+	
 
 	@Override
 	public void setAttribute(final String attribute, final Object value) {

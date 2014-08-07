@@ -29,9 +29,11 @@ import org.python.core.PyString;
 
 /**
  * A script engine to execute/debug Python code on a Jython interpreter.
+ * 
+ * Uses most of JythonScriptEngine's functionality and only extends it
+ * when file is to be debugged.
  */
-public class JythonDebuggerEngine extends JythonScriptEngine implements
-		IDebugEngine {
+public class JythonDebuggerEngine extends JythonScriptEngine implements IDebugEngine {
 	private JythonDebugger mDebugger = null;
 	
 	private boolean mDebugRun;
@@ -40,7 +42,6 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements
 	public JythonDebuggerEngine() {
 		super();
 		mPyDir = getPyDir();
-		System.out.println(mPyDir);
 	}
 	
 	public void setDebugger(JythonDebugger debugger) {

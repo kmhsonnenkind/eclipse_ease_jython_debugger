@@ -20,8 +20,13 @@ import org.eclipse.ease.Script;
 import org.eclipse.ease.debugging.ScriptDebugTarget;
 import org.eclipse.ease.debugging.events.IDebugEvent;
 
+/**
+ * ScriptDebugTarget for communication between Eclipse framework and Jython debugger.
+ * @author kloeschmartin
+ *
+ */
 public class JythonDebugTarget extends ScriptDebugTarget {
-	private static final String pyBreakpointType = "org.python.pydev.debug";
+	private static final String pyBreakpointType = JythonDebugModelPresentation.ID;
 	
 	/**
 	 * Constructor for now only calls super constructor and 
@@ -44,12 +49,6 @@ public class JythonDebugTarget extends ScriptDebugTarget {
 	// IEventProcessor
 	// ************************************************************
 
-	@Override
-	public void handleEvent(final IDebugEvent event) {
-		// TODO: remove
-		super.handleEvent(event);
-	}
-
 	/**
 	 * Getter methods for all matching breakpoints in given script.
 	 * 
@@ -63,24 +62,19 @@ public class JythonDebugTarget extends ScriptDebugTarget {
 	
 	@Override
 	public void breakpointAdded(final IBreakpoint breakpoint) {
-		System.out.println("I should now add a breakpoint");
 	}
 	
 
 	@Override
 	public void breakpointRemoved(final IBreakpoint breakpoint, final IMarkerDelta delta) {
-		System.out.println("I should now remove a breakpoint");
-
 	}
 
 	@Override
 	public void breakpointChanged(final IBreakpoint breakpoint, final IMarkerDelta delta) {
-		System.out.println("I should now update a breakpoint");
 	}
 	
 	@Override
 	public boolean supportsBreakpoint(final IBreakpoint breakpoint) {
-		// TODO Auto-generated method stub
 		return true;
 	}
 }

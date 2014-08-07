@@ -26,8 +26,8 @@ import org.osgi.framework.BundleContext;
 import org.python.core.PySystemState;
 
 /**
- * The activator class controls the plug-in life cycle Copy of
- * org.eclipse.ease.lang.python.jython.Activator
+ * The activator class controls the plug-in life cycle.
+ * Copy of org.eclipse.ease.lang.python.jython.Activator
  */
 public class Activator extends AbstractUIPlugin {
 
