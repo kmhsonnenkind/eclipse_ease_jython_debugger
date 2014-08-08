@@ -62,17 +62,4 @@
          </action>
       </viewContribution>
    </extension>
-   <extension
-         point="org.eclipse.debug.core.breakpoints">
-      <breakpoint
-            class="org.eclipse.ease.lang.python.jython.debugger.model.JythonLineBreakpoint"
-            id="org.eclipse.ease.lang.python.jython.debugger.JythonBreakpoint"
-            markerType="org.eclipse.ease.lang.python.jython.debugger.jythonLineBreakpointMarker"
-            name="Jython Line Breakpoint">
-      </breakpoint>
-   </extension>
-   <extension
-         id="jythonLineBreakpointMarker"
-         point="org.eclipse.core.resources.markers">
-   </extension>
 </plugin>
