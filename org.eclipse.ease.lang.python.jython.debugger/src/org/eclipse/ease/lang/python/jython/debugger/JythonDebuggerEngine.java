@@ -110,7 +110,7 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements IDebugEn
 			}
 			
 			// use absolute file location that Jython can handle breakpoints correctly
-			String absoluteFilename = new File(ResourcesPlugin.getWorkspace().getRoot().getLocation().toFile(), fileName).getAbsolutePath();
+			String absoluteFilename = new File(ResourcesPlugin.getWorkspace().getRoot().getLocation().toFile(), fileName).getAbsolutePath().replace("\\","\\\\");
 			
 			// Patch Script to use debugger to start file
 			String patchedCommandString = String.format("%s.run('%s')", JythonDebugger.PyDebuggerName, absoluteFilename);
