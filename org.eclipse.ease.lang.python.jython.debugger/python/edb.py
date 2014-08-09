@@ -211,6 +211,10 @@ class Edb(bdb.Bdb):
         '''
         Function called when Debugger is about to continue (step or resume).
         '''
+        # TODO: think if file should be locked
+        # Probably not necessary because communication with JythonDebugger is synchronous
+        self._debugger.checkBreakpoints(self._current_file)
+        
         # Double checked locking to assure thread safety
         if self._step_func:
             with self._step_lock:

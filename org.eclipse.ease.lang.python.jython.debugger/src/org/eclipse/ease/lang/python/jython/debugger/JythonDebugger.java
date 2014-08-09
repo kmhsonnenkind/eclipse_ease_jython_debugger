@@ -14,6 +14,7 @@ package org.eclipse.ease.lang.python.jython.debugger;
 import java.io.File;
 import java.util.List;
 
+import org.eclipse.core.runtime.CoreException;
 import org.eclipse.debug.core.DebugEvent;
 import org.eclipse.debug.core.DebugPlugin;
 import org.eclipse.debug.core.model.IBreakpoint;
@@ -215,6 +216,14 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 	 * @param event: Event containing all necessary information for the desired Breakpoint.
 	 */
 	private void handleBreakpointRequest(BreakpointRequest event) {
+		// Simple check to see if breakpoint is enabled.
+		try {
+			if (!event.getBreakpoint().isEnabled()) {
+				return;
+			}
+		} catch (CoreException e) {
+			return;
+		}
 		// Create parameters in correct format
 		PyObject[] args = new PyObject[1];
 		args[0] = Py.java2py(new BreakpointInfo(((BreakpointRequest) event)
@@ -234,6 +243,14 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 		BreakpointInfo info;
 		// Iterate over all Jython breakpoints and set the ones matching new file.
 		for (IBreakpoint bp : DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(JythonDebugModelPresentation.ID)) {
+			// simple check to see if Breakpoint is enabled. Try - catch necessary
+			try {
+				if (!bp.isEnabled()) {
+					continue;
+				}
+			} catch (CoreException e) {
+				continue;
+			}
 			info = new BreakpointInfo(bp);
 			
 			// If filename matches add new breakpoint
