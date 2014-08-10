@@ -7,7 +7,8 @@
  *
  * Contributors:
  *     Christian Pontesegger - initial API
- *     Martin Kloesch - implementation
+ *     Arthur Daussy - initial implementation of JythonScriptEngine
+ *     Martin Kloesch - implementation of Debugger extensions
  *******************************************************************************/
 package org.eclipse.ease.lang.python.jython.debugger;
 
@@ -144,7 +145,7 @@ public class JythonDebuggerEngine extends JythonScriptEngine implements IDebugEn
 		mDebugRun = true;
 		launch.addDebugTarget(target);
 
-		final JythonDebugger debugger = new JythonDebugger(this, suspendOnStartup);
+		final JythonDebugger debugger = new JythonDebugger(this, suspendOnStartup, suspendOnScriptLoad);
 		setDebugger(debugger);
 		
 		final EventDispatchJob dispatcher = new EventDispatchJob(target, debugger);

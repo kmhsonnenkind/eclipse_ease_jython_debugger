@@ -1,3 +1,13 @@
+/*******************************************************************************
+ * Copyright (c) 2014 Kloesch Martin
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *     Martin Kloesch - initial implementation
+ *******************************************************************************/
 package org.eclipse.ease.lang.python.jython.debugger;
 
 import java.io.File;
@@ -35,16 +45,16 @@ public class BreakpointInfo {
 		mFilename = breakpoint.getMarker().getResource().getFullPath().toOSString();
 		mFilename = new File(ResourcesPlugin.getWorkspace().getRoot().getLocation().toFile(), mFilename).getAbsolutePath();
 
+		// If LineBreakpoint given calculate Linenumber
 		if (breakpoint instanceof LineBreakpoint) {
 			try {
 				mLinenumber = ((LineBreakpoint) breakpoint).getLineNumber();
 			} catch (CoreException e) {
-				System.err.println("BreakpointInfo: did not get linenumber for breakpoint.");
 				e.printStackTrace();
 			}
 		}
 		
-		// TODO: think about custom breakpoint
+		// Get condition from PyBreakpoint
 		if (breakpoint instanceof PyBreakpoint) {
 			try {
 				mCondition = ((PyBreakpoint) breakpoint).getCondition();

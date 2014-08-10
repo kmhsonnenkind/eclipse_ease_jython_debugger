@@ -1,17 +1,26 @@
+'''
+Copyright (c) 2014 Martin Kloesch
+All rights reserved. This program and the accompanying materials
+are made available under the terms of the Eclipse Public License v1.0
+which accompanies this distribution, and is available at
+http://www.eclipse.org/legal/epl-v10.html
+
+Contributors:
+ * Martin Kloesch - initial API and implementation
+'''
 # Python std library imports
 import bdb
 import threading
 import os
-    
-# Eclipse imports for communication with framework     
-from org.eclipse.ease.debugging.events import SuspendedEvent
-from org.eclipse.ease.debugging.events import ResumedEvent
-from org.eclipse.debug.core import DebugEvent
-from org.eclipse.ease.lang.python.jython.debugger import JythonDebugFrame
+
+# Eclipse imports for communication with framework  
+import org.eclipse.ease.debug.core
+import org.eclipse.ease.lang.python.jython.debugger
 
 # Java imports to easily cast objects
-from java.lang import Thread
-from java.util import HashMap
+import java.lang
+import java.util
+
          
 class Edb(bdb.Bdb):
     '''
@@ -35,6 +44,10 @@ class Edb(bdb.Bdb):
     
     #: Flag to signalize if debugger should suspend on startup
     _suspend_on_startup = False
+    
+    #: Flag to signalize if debugger should suspend when new script is loaded.
+    #: Not in use yet
+    _suspend_on_script_load = False
 
     def __init__(self, breakpoints=[]):
         '''
@@ -72,6 +85,18 @@ class Edb(bdb.Bdb):
             Value for _suspend_on_startup to be set.
         '''
         self._suspend_on_startup = suspend
+        
+    def set_suspend_on_script_load(self, suspend):
+        '''
+        Setter method for suspend_on_script_load flag.
+        
+        Since the actual object creation is handled by setup.py we need to set 
+        the object here.
+    
+        :param bool suspend:
+            Value for _suspend_on_script_load to be set.
+        '''
+        self._suspend_on_script_load = suspend
 
     def set_break(self, breakpoint):
         '''
@@ -86,10 +111,10 @@ class Edb(bdb.Bdb):
         # Parse BreakpointInfo to named variables for easier understanding
         filename = breakpoint.getFilename()
         lineno = breakpoint.getLinenumber()
-        temporary = False
+        temporary = breakpoint.getTemporary()
         cond = breakpoint.getCondition()
-        funcname = None
         hitcount = breakpoint.getHitcount()
+        funcname = None
         
         # Just to be sure delete old breakpoint
         self.clear_break(filename, lineno)
@@ -124,7 +149,7 @@ class Edb(bdb.Bdb):
             # In case of file change wait for JythonDebugger to set new breakpoints.
             if self._current_file and os.path.exists(self._current_file):
                 self._debugger.checkBreakpoints(fn);
-                
+            
             # TODO: Check if locking would interfere with performance
             self._current_file = fn
         return bdb.Bdb.dispatch_call(self, frame, arg)
@@ -154,10 +179,11 @@ class Edb(bdb.Bdb):
             self._current_frame = frame
 
         # Simple sulution to handle suspend on startup
-        if self._first and self._suspend_on_startup:
+        if self._first:
             self._first = False
-            self.set_continue()
-            return
+            if not self._suspend_on_startup:
+                self.set_continue()
+                return
         
         # Call break function that notifies JythonDebugger and suspends execution
         self._break()
@@ -173,7 +199,7 @@ class Edb(bdb.Bdb):
         '''
         # Use suspend in JythonDebugger. 
         # Would also be possible to directly raise new SuspendedEvent
-        self._debugger.fireSuspendEvent(Thread.currentThread(), self._get_stack_trace())
+        self._debugger.fireSuspendEvent(java.lang.Thread.currentThread(), self._get_stack_trace())
         
         # Wait for continuation from Eclipse
         self._continue_event.wait()
@@ -198,12 +224,12 @@ class Edb(bdb.Bdb):
                 break
             
             # Convert from JythonDictionary to Java.util.HashMap
-            java_locals = HashMap()
+            java_locals = java.util.HashMap()
             for key, val in frame.f_locals.items():
                 java_locals.put(key,val)
                 
             # Append frame to stack
-            stack.append(JythonDebugFrame(filename, lineno, java_locals))
+            stack.append(org.eclipse.ease.lang.python.jython.debugger.JythonDebugFrame(filename, lineno, java_locals))
             
         return stack
 
@@ -261,7 +287,7 @@ class Edb(bdb.Bdb):
         '''
         self._step_func = self.set_until
         self._step_param = [self._current_frame]
-        self._resume_event_type = DebugEvent.STEP_OVER
+        self._resume_event_type = org.eclipse.debug.core.DebugEvent.STEP_OVER
  
     @_continue_wrapper
     def step_stepinto(self):
@@ -270,7 +296,7 @@ class Edb(bdb.Bdb):
         Thread safety assured by _continue_wrapper.
         '''
         self._step_func = self.set_step
-        self._resume_event_type = DebugEvent.STEP_INTO
+        self._resume_event_type = org.eclipse.debug.core.DebugEvent.STEP_INTO
  
     @_continue_wrapper
     def step_stepout(self):
@@ -280,7 +306,7 @@ class Edb(bdb.Bdb):
         '''
         self._step_func = self.set_return
         self._step_param = [self._current_frame]
-        self._resume_event_type = DebugEvent.STEP_RETURN
+        self._resume_event_type = org.eclipse.debug.core.DebugEvent.STEP_RETURN
  
     @_continue_wrapper
     def step_quit(self):
@@ -371,6 +397,7 @@ class Edb(bdb.Bdb):
         self._first = True
         cmd = 'execfile({})'.format(repr(file_to_run))
         bdb.Bdb.run(self, cmd)
+        self._debugger = None
         bdb.Bdb.__init__(self, None)
 
     def reload_modules(self):
@@ -379,9 +406,14 @@ class Edb(bdb.Bdb):
         so we reload all imported modules here to have modified sources.
         '''
         import sys, types
-        for mod in globals().values():
-            # Ignore packages imported here
-            if isinstance(mod, types.ModuleType) and mod not in [bdb, sys, types]:
-                mod = reload(mod)
+        for mod_name, mod in {
+                name: mod for 
+                name, mod in 
+                sys.modules.items() 
+                if mod and isinstance(mod, types.ModuleType) and 
+                mod not in [bdb, sys, types, os, threading] and 
+                name not in ['__main__']
+                }.items():
+            globals().update({mod_name: reload(mod)})
 
 eclipse_jython_debugger = Edb()

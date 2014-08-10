@@ -18,7 +18,6 @@ import org.eclipse.debug.core.ILaunch;
 import org.eclipse.debug.core.model.IBreakpoint;
 import org.eclipse.ease.Script;
 import org.eclipse.ease.debugging.ScriptDebugTarget;
-import org.eclipse.ease.debugging.events.IDebugEvent;
 
 /**
  * ScriptDebugTarget for communication between Eclipse framework and Jython debugger.

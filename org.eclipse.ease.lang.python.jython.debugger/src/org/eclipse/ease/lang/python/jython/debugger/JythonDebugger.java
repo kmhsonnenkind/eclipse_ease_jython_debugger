@@ -39,6 +39,7 @@ import org.eclipse.ease.lang.python.jython.debugger.model.JythonDebugModelPresen
 import org.python.core.Py;
 import org.python.core.PyBoolean;
 import org.python.core.PyObject;
+import org.python.core.PyString;
 import org.python.util.InteractiveInterpreter;
 
 /**
@@ -58,7 +59,9 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 	public static final String PyDebuggerName = "eclipse_jython_debugger";
 	private static final String PySetDebuggerCmd = "set_debugger";
 	private static final String PySetSuspendOnStartupCmd = "set_suspend_on_startup";
+	private static final String PySetSuspendOnScriptLoad = "set_suspend_on_script_load";
 	private static final String PySetBreakpointCmd = "set_break";
+	private static final String PyClearBreakpointsCmd = "clear_all_file_breaks";
 
 	private static final String PyStepoverCmd = "step_stepover";
 	private static final String PyStepintoCmd = "step_stepinto";
@@ -69,11 +72,13 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 	private JythonDebuggerEngine mEngine;
 	private EventDispatchJob mDispatcher;
 	private boolean mSuspendOnStartup;
+	private boolean mSuspendOnScriptLoad;
 
-	public JythonDebugger(final JythonDebuggerEngine engine, boolean suspendOnStartup) {
+	public JythonDebugger(final JythonDebuggerEngine engine, final boolean suspendOnStartup, final boolean suspendOnScriptLoad) {
 		mEngine = engine;
 		mEngine.addExecutionListener(this);
 		mSuspendOnStartup = suspendOnStartup;
+		mSuspendOnScriptLoad = suspendOnScriptLoad;
 	}
 
 	public void setInterpreter(InteractiveInterpreter interpreter) {
@@ -93,6 +98,7 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 		mPyDebugger = mInterpreter.get(PyDebuggerName);
 		mPyDebugger.invoke(PySetDebuggerCmd, Py.java2py(this));
 		mPyDebugger.invoke(PySetSuspendOnStartupCmd, new PyBoolean(mSuspendOnStartup));
+		mPyDebugger.invoke(PySetSuspendOnScriptLoad, new PyBoolean(mSuspendOnScriptLoad));
 	}
 
 	/**
@@ -242,6 +248,7 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 		// BreakpointInfo object is used to have easier access to Breakpoint information
 		BreakpointInfo info;
 		// Iterate over all Jython breakpoints and set the ones matching new file.
+		mPyDebugger.invoke(PyClearBreakpointsCmd, new PyString(filename));
 		for (IBreakpoint bp : DebugPlugin.getDefault().getBreakpointManager().getBreakpoints(JythonDebugModelPresentation.ID)) {
 			// simple check to see if Breakpoint is enabled. Try - catch necessary
 			try {
