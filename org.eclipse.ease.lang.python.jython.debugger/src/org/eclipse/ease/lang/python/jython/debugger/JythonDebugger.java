@@ -245,6 +245,9 @@ public class JythonDebugger implements IEventProcessor, IExecutionListener {
 	 * @param filename: filename of new Jython file currently being executed.
 	 */
 	public void checkBreakpoints(String filename) {
+		// Simple check to see if debugger already Garbage-collected
+		if (mPyDebugger == null) return;
+		
 		// BreakpointInfo object is used to have easier access to Breakpoint information
 		BreakpointInfo info;
 		// Iterate over all Jython breakpoints and set the ones matching new file.
